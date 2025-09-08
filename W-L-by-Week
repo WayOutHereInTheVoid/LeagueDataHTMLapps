@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sleeper League: All-Time Weekly Records</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Darker background */
+            color: #d1d5db;
+        }
+        .loader {
+            border: 4px solid #4b5563; /* Gray border */
+            border-top: 4px solid #3b82f6; /* Blue spinner */
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        th, td {
+            white-space: nowrap;
+        }
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: #1f2937;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            cursor: pointer;
+            color: #9ca3af;
+            transition: color 0.2s;
+        }
+        .modal-close:hover {
+            color: #fff;
+        }
+        .clickable-cell:hover {
+            background-color: #374151;
+            cursor: pointer;
+        }
+        /* Highlight Styles */
+        .perfect-week {
+            background-color: #166534 !important; /* A strong green */
+            color: #f0fdf4;
+            font-weight: 700;
+        }
+        .winless-week {
+            background-color: #991b1b !important; /* A strong red */
+            color: #fef2f2;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">TRL All-Time Weekly Records (2020-2024)</h1>
+            <p class="text-md md:text-lg text-gray-400">Your team's historical performance in each week of the regular season.</p>
+        </header>
+
+        <div id="loading" class="flex flex-col justify-center items-center h-64">
+            <div class="loader"></div>
+            <p class="ml-4 text-lg mt-4">Fetching all season data... This may take a moment.</p>
+        </div>
+
+        <div id="data-display" class="hidden">
+            <div class="bg-gray-900 shadow-2xl rounded-lg p-4 md:p-6">
+                <div class="table-container">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-800" id="table-header">
+                            <!-- Header will be generated here -->
+                        </thead>
+                        <tbody class="divide-y divide-gray-700" id="table-body">
+                            <!-- Team data will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+         <div id="error-message" class="hidden text-center text-red-400 mt-8 p-4 bg-red-900/50 rounded-lg">
+        </div>
+    </div>
+
+    <!-- Modal Structure -->
+    <div id="matchup-modal" class="modal-overlay hidden">
+        <div class="modal-content relative">
+            <svg id="modal-close-btn" class="modal-close h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <h2 id="modal-title" class="text-2xl font-bold text-white mb-4">Matchup History</h2>
+            <div class="table-container">
+                 <table class="min-w-full divide-y divide-gray-600">
+                    <thead class="bg-gray-700/50">
+                        <tr>
+                            <th class="py-2 px-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Year</th>
+                            <th class="py-2 px-3 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Opponent</th>
+                            <th class="py-2 px-3 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Score</th>
+                            <th class="py-2 px-3 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Result</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modal-table-body" class="divide-y divide-gray-700">
+                        <!-- Matchup data will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Global Variables & Constants ---
+        const leagueIds = {
+            2024: '1124822402371428352',
+            2023: '986011172245692416',
+            2022: '842236252429324288',
+            2021: '650044825487384576',
+            2020: '604862459685191680'
+        };
+        let masterTeamRecords = {}; // To store all processed data for the modal
+
+        // --- DOM Elements ---
+        const loadingEl = document.getElementById('loading');
+        const dataDisplayEl = document.getElementById('data-display');
+        const tableHeaderEl = document.getElementById('table-header');
+        const tableBodyEl = document.getElementById('table-body');
+        const errorMessageEl = document.getElementById('error-message');
+        const modalEl = document.getElementById('matchup-modal');
+        const modalTitleEl = document.getElementById('modal-title');
+        const modalTableBodyEl = document.getElementById('modal-table-body');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        // --- API Fetching ---
+        async function fetchData(url) {
+            await new Promise(resolve => setTimeout(resolve, 250)); // Rate limit buffer
+            const response = await fetch(url);
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status} for ${url}`);
+            }
+            return await response.json();
+        }
+
+        async function fetchAllDataForYear(year, leagueId) {
+            const baseUrl = 'https://api.sleeper.app/v1';
+            const league = await fetchData(`${baseUrl}/league/${leagueId}`);
+            if (!league) return null;
+
+            const seasonWeeks = league.settings.playoff_week_start > 1 ? league.settings.playoff_week_start - 1 : 14;
+            
+            const [rosters, users, ...weeklyMatchups] = await Promise.all([
+                fetchData(`${baseUrl}/league/${leagueId}/rosters`),
+                fetchData(`${baseUrl}/league/${leagueId}/users`),
+                ...[...Array(seasonWeeks).keys()].map(i =>
+                    fetchData(`${baseUrl}/league/${leagueId}/matchups/${i + 1}`)
+                )
+            ]);
+
+            return { year, league, rosters, users, weeklyMatchups, seasonWeeks };
+        }
+
+        // --- Data Processing ---
+        function processAllData(allYearsData) {
+            const teamRecordsByWeek = {};
+            let maxWeeks = 0;
+
+            allYearsData.forEach(yearData => {
+                if (!yearData) return;
+
+                const { year, rosters, users, weeklyMatchups, seasonWeeks } = yearData;
+                if (seasonWeeks > maxWeeks) maxWeeks = seasonWeeks;
+
+                const userMap = users.reduce((acc, user) => {
+                    acc[user.user_id] = user.display_name;
+                    return acc;
+                }, {});
+
+                const rosterOwnerMap = rosters.reduce((acc, roster) => {
+                    if (roster.owner_id) acc[roster.roster_id] = roster.owner_id;
+                    return acc;
+                }, {});
+
+                // Initialize team records
+                rosters.forEach(roster => {
+                    const ownerId = roster.owner_id;
+                    if (ownerId && !teamRecordsByWeek[ownerId]) {
+                        teamRecordsByWeek[ownerId] = {
+                            ownerId: ownerId,
+                            teamName: userMap[ownerId] || `User ${ownerId}`,
+                            weeklyStats: Array(18).fill(null).map(() => ({ 
+                                wins: 0, losses: 0, ties: 0, matchups: [] 
+                            })),
+                        };
+                    }
+                });
+                
+                weeklyMatchups.forEach((weekData, weekIndex) => {
+                    const currentWeek = weekIndex + 1;
+                    if (!weekData) return;
+
+                    const processedMatchups = new Set();
+                    weekData.forEach(matchup => {
+                        if (processedMatchups.has(matchup.matchup_id)) return;
+
+                        const opponentMatchup = weekData.find(m => m.matchup_id === matchup.matchup_id && m.roster_id !== matchup.roster_id);
+                        if (!opponentMatchup) return;
+
+                        const ownerId = rosterOwnerMap[matchup.roster_id];
+                        const opponentOwnerId = rosterOwnerMap[opponentMatchup.roster_id];
+                        if (!ownerId || !opponentOwnerId) return;
+
+                        let result, opponentResult;
+                        if (matchup.points > opponentMatchup.points) {
+                            result = 'W';
+                            opponentResult = 'L';
+                            teamRecordsByWeek[ownerId].weeklyStats[currentWeek].wins++;
+                            teamRecordsByWeek[opponentOwnerId].weeklyStats[currentWeek].losses++;
+                        } else if (matchup.points < opponentMatchup.points) {
+                             result = 'L';
+                             opponentResult = 'W';
+                            teamRecordsByWeek[ownerId].weeklyStats[currentWeek].losses++;
+                            teamRecordsByWeek[opponentOwnerId].weeklyStats[currentWeek].wins++;
+                        } else if (matchup.points > 0) {
+                             result = 'T';
+                             opponentResult = 'T';
+                            teamRecordsByWeek[ownerId].weeklyStats[currentWeek].ties++;
+                            teamRecordsByWeek[opponentOwnerId].weeklyStats[currentWeek].ties++;
+                        } else {
+                            return; // Skip if 0-0
+                        }
+                        
+                        // Store detailed matchup info for both teams
+                        const teamName = teamRecordsByWeek[ownerId].teamName;
+                        const opponentName = teamRecordsByWeek[opponentOwnerId].teamName;
+
+                        teamRecordsByWeek[ownerId].weeklyStats[currentWeek].matchups.push({
+                            year, opponentName, score: `${matchup.points.toFixed(2)} - ${opponentMatchup.points.toFixed(2)}`, result
+                        });
+                        teamRecordsByWeek[opponentOwnerId].weeklyStats[currentWeek].matchups.push({
+                             year, opponentName: teamName, score: `${opponentMatchup.points.toFixed(2)} - ${matchup.points.toFixed(2)}`, result: opponentResult
+                        });
+                        
+                        processedMatchups.add(matchup.matchup_id);
+                    });
+                });
+            });
+            masterTeamRecords = teamRecordsByWeek; // Save for modal use
+            renderTable(masterTeamRecords, maxWeeks);
+        }
+
+        // --- Rendering & UI ---
+        function renderTable(teamData, seasonWeeks) {
+            tableHeaderEl.innerHTML = '<tr><th class="py-3 px-4 text-left text-xs font-semibold text-gray-300 uppercase tracking-wider">Team Name</th>' +
+                [...Array(seasonWeeks).keys()].map(i => `<th class="py-3 px-4 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider">Wk ${i + 1}</th>`).join('') +
+                '<th class="py-3 px-4 text-center text-xs font-semibold text-gray-300 uppercase tracking-wider bg-gray-700">Total</th></tr>';
+
+            const teamsWithTotals = Object.values(teamData).map(team => {
+                const total = { wins: 0, losses: 0, ties: 0 };
+                for (let i = 1; i <= seasonWeeks; i++) {
+                    total.wins += team.weeklyStats[i].wins;
+                    total.losses += team.weeklyStats[i].losses;
+                    total.ties += team.weeklyStats[i].ties;
+                }
+                return { ...team, total };
+            }).filter(team => team.total.wins > 0 || team.total.losses > 0);
+
+            teamsWithTotals.sort((a, b) => b.total.wins - a.total.wins || (b.total.wins + b.total.ties) - (a.total.wins + a.total.ties));
+
+            tableBodyEl.innerHTML = teamsWithTotals.map(team => {
+                const weeklyCells = [...Array(seasonWeeks).keys()].map(i => {
+                    const week = i + 1;
+                    const record = team.weeklyStats[week];
+                    const tiesText = record.ties > 0 ? `-${record.ties}` : '';
+                    
+                    let highlightClass = '';
+                    const gamesPlayed = record.wins + record.losses + record.ties;
+                    if (gamesPlayed === 5) {
+                        if (record.wins === 5) {
+                            highlightClass = 'perfect-week';
+                        } else if (record.losses === 5) {
+                            highlightClass = 'winless-week';
+                        }
+                    }
+
+                    return `<td class="py-4 px-4 text-center text-gray-300 clickable-cell ${highlightClass}" data-owner-id="${team.ownerId}" data-week="${week}">${record.wins}-${record.losses}${tiesText}</td>`;
+                }).join('');
+
+                const tiesTextTotal = team.total.ties > 0 ? `-${team.total.ties}` : '';
+                return `
+                    <tr class="hover:bg-gray-800">
+                        <td class="py-4 px-4 font-medium text-white">${team.teamName}</td>
+                        ${weeklyCells}
+                        <td class="py-4 px-4 text-center font-bold text-white bg-gray-700/50">${team.total.wins}-${team.total.losses}${tiesTextTotal}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            loadingEl.style.display = 'none';
+            dataDisplayEl.style.display = 'block';
+        }
+
+        function showMatchupModal(ownerId, week) {
+            const teamData = masterTeamRecords[ownerId];
+            if (!teamData) return;
+            
+            const matchups = teamData.weeklyStats[week].matchups;
+            matchups.sort((a, b) => b.year - a.year); // Sort by most recent year
+
+            modalTitleEl.textContent = `Matchup History: ${teamData.teamName} - Week ${week}`;
+
+            modalTableBodyEl.innerHTML = matchups.map(m => {
+                 let resultClass = '';
+                 if (m.result === 'W') resultClass = 'text-green-400';
+                 if (m.result === 'L') resultClass = 'text-red-400';
+
+                return `
+                    <tr class="hover:bg-gray-800">
+                        <td class="py-3 px-3 text-gray-300">${m.year}</td>
+                        <td class="py-3 px-3 text-white">${m.opponentName}</td>
+                        <td class="py-3 px-3 text-center text-gray-300">${m.score}</td>
+                        <td class="py-3 px-3 text-center font-bold ${resultClass}">${m.result}</td>
+                    </tr>
+                `;
+            }).join('');
+
+            modalEl.classList.remove('hidden');
+        }
+
+        function showError(message) {
+            loadingEl.style.display = 'none';
+            dataDisplayEl.style.display = 'none';
+            errorMessageEl.textContent = message;
+            errorMessageEl.style.display = 'block';
+            console.error(message);
+        }
+
+        // --- Event Listeners & Initialization ---
+        tableBodyEl.addEventListener('click', (e) => {
+            const cell = e.target.closest('.clickable-cell');
+            if (cell && cell.dataset.ownerId) {
+                const { ownerId, week } = cell.dataset;
+                showMatchupModal(ownerId, week);
+            }
+        });
+
+        modalCloseBtn.addEventListener('click', () => modalEl.classList.add('hidden'));
+        modalEl.addEventListener('click', (e) => {
+            if (e.target === modalEl) {
+                modalEl.classList.add('hidden');
+            }
+        });
+
+        async function initializeApp() {
+            try {
+                const promises = Object.entries(leagueIds).map(([year, leagueId]) => fetchAllDataForYear(year, leagueId));
+                const allYearsData = await Promise.all(promises);
+                processAllData(allYearsData);
+            } catch (error) {
+                showError(`An error occurred while fetching league data. The Sleeper API might be temporarily unavailable or a league ID could be invalid. Check console for details.`);
+            }
+        }
+
+        initializeApp();
+    </script>
+</body>
+</html>
